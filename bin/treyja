@@ -1,0 +1,136 @@
+#! /usr/bin/env ruby
+
+require 'pry'
+
+$LOAD_PATH << File.join(__dir__, "../lib")
+require 'tensors_pb.rb'
+
+$unabbrev = {
+  'h' => 'help',
+  'help' => 'help',
+  'output' => 'output'
+}
+
+$options = [
+  *ARGV.map { |k| (ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], true] : nil },
+  *ARGV.each_cons(2).map { |k, v| (ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], v] : nil }
+  ].compact.to_h
+
+$command, $file = ARGV.take_while { |s| s !~ /^-/ }
+if $command.nil? || $options["help"]
+  puts <<EOS
+Usage: treyja COMMAND [FILE] [OPTIONS]
+
+  If FILE is not given, it reads from STDIN.
+
+Available options:
+  -h,--help                Show this help text
+  --output DIR             Directory to output images
+
+Available commands:
+  json                     Output tensors in JSON format
+  image                    Create a png image and outputs to DIR
+  dump                     Dump in the format of inner expression
+EOS
+  exit
+end
+
+
+def reader
+  io = $file ? open($file) : STDIN
+  io.binmode
+
+  Enumerator.new do |y|
+    while magic = io.read(4)
+      raise "Incorrect magic bytes" unless magic == 'XCIX'
+      length = io.read(8).reverse.unpack("Q").first.to_i
+      y << Tensors::TensorsProto.decode(io.read(length))
+    end
+  end
+end
+
+def write_image tensor, k, file
+  width, height, channel = tensor.dims
+  width ||= 1
+  height ||= 1
+  channel ||= 1
+  offset = width * height * channel * k
+
+  depth, org_data =
+    case tensor.data_type
+    when :UINT8
+      [8, tensor.byte_data.unpack('C*')]
+    when :INT8
+      [8, tensor.byte_data.unpack('C*')]
+    when :FLOAT
+      [8, tensor.float_data.map {|f| (f * 255).to_i}]
+    when :DOUBLE
+      [8, tensor.double_data.map {|f| (f * 255).to_i}]
+    else
+      raise "unsupported data type: #{tensor.data_type}"
+    end
+
+  color_type =
+    case channel
+    when 1
+      0                         # grayscale
+    when 2
+      4                         # grayscale and alpha
+    when 3
+      2                         # rgb
+    when 4
+      6                         # rgba
+    else
+      raise "unsupported channel: #{channel}"
+    end
+
+  raw_data = (0...height).map do |y|
+    (0...width).map do |x|
+      (0...channel).map do |ch|
+        org_data[ch * height * width + y * width + x + offset]
+      end
+    end
+  end
+
+  def chunk(type, data)
+    [data.bytesize, type, data, Zlib.crc32(type + data)].pack("NA4A*N")
+  end
+
+  open(file, 'w') do |io|
+    io.print "\x89PNG\r\n\x1a\n"
+    io.print chunk("IHDR", [width, height, depth, color_type, 0, 0, 0].pack("NNCCCCC"))
+    img_data = raw_data.map {|line| ([0] + line.flatten).pack("C*") }.join
+    io.print chunk("IDAT", Zlib::Deflate.deflate(img_data))
+    io.print chunk("IEND", "")
+  end
+end
+
+case $command
+when "dump"
+  reader.each do |ts|
+    p ts
+    STDOUT.flush
+  end
+when "json"
+  reader.each do |ts|
+    puts ts.to_json
+    STDOUT.flush
+  end
+when "image"
+  dir = $options["output"]
+  raise "--output option required" unless dir
+
+  FileUtils.mkdir_p dir
+
+  require "zlib"
+  reader.each_with_index do |tensors, i|
+    tensors.tensors.each_with_index do |tensor, j|
+      n = tensor.dims.drop(3).inject(1, :*) # Drop width, height and channel and fold the rest
+      n.times.each do |k|
+        postfix = ([i, j] + (n > 1 ? [k] : [])).map(&:to_s).join('-')
+        dst = File.join(dir, "image-#{postfix}.png")
+        write_image tensor, k, dst
+      end
+    end
+  end
+end
