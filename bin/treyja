@@ -29,7 +29,8 @@ Available options:
 
 Available commands:
   json                     Output tensors in JSON format
-  image                    Create a png image and outputs to DIR
+  csv                      Output tensors in CSV format
+  image                    Create png images and output to DIR
   dump                     Dump in the format of inner expression
 EOS
   exit
@@ -49,6 +50,8 @@ def reader
   end
 end
 
+
+
 def write_image tensor, k, file
   width, height, channel = tensor.dims
   width ||= 1
@@ -59,9 +62,9 @@ def write_image tensor, k, file
   depth, org_data =
     case tensor.data_type
     when :UINT8
-      [8, tensor.byte_data.unpack('C*')]
+      [8, tensor.byte_data.unpack('C*').drop(8)]
     when :INT8
-      [8, tensor.byte_data.unpack('C*')]
+      [8, tensor.byte_data.unpack('C*').drop(8)]
     when :FLOAT
       [8, tensor.float_data.map {|f| (f * 255).to_i}]
     when :DOUBLE
@@ -105,6 +108,35 @@ def write_image tensor, k, file
   end
 end
 
+def dims_to_indices dims
+  if dims.empty?
+    [[]]
+  else
+    x = dims.first
+    xs = dims[1..-1]
+    Enumerator.new do |y|
+      dims_to_indices(xs).each do |is|
+        x.times.each do |i|
+          y << [i, *is]
+        end
+      end
+    end
+  end
+end
+
+def raw_data tensor
+  case tensor.data_type
+  when :INT8, :UINT8
+    tensor.byte_data.unpack('C*').drop(8)
+  when :FLOAT
+    tensor.float_data
+  when :DOUBLE
+    tensor.double_data
+  else
+    raise "unsupported data type: #{tensor.data_type}"
+  end
+end
+
 case $command
 when "dump"
   reader.each do |ts|
@@ -131,6 +163,19 @@ when "image"
         dst = File.join(dir, "image-#{postfix}.png")
         write_image tensor, k, dst
       end
+    end
+  end
+when "csv"
+  if head = reader.first
+    headers = head.tensors.each_with_index.flat_map do |t, i|
+      dims_to_indices(t.dims).map do |ix|
+        [i.to_s, ix.empty? ? nil : ix.reverse.map(&:to_s).join('_')].compact.join('-')
+      end
+    end
+    puts headers.join(',')
+    puts head.tensors.flat_map { |t| raw_data(t) }.map(&:to_s).join(',')
+    reader.each do |ts|
+      puts ts.tensors.flat_map { |t| raw_data(t) }.map(&:to_s).join(',')
     end
   end
 end
