@@ -9,12 +9,13 @@ $unabbrev = {
   'h' => 'help',
   'help' => 'help',
   'output' => 'output',
+  'normalize' => 'normalize',
   'round' => 'round'
 }
 
 $options = [
   *ARGV.map { |k| (ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], true] : nil },
-  *ARGV.each_cons(2).map { |k, v| (ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], v] : nil }
+  *ARGV.each_cons(2).map { |k, v| (v !~ /^-/ && ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], v] : nil }
   ].compact.to_h
 
 $command, $file = ARGV.take_while { |s| s !~ /^-/ }
@@ -27,6 +28,7 @@ Usage: treyja COMMAND [FILE] [OPTIONS]
 Available options:
   -h,--help                Show this help text
   --output DIR             Directory to output images
+  --normalize              Normalize floating values (image only)
   --round INT              Digit to round floating values (default: 4)
 
 Available commands:
@@ -71,24 +73,34 @@ def reader
 end
 
 
-
 def write_image tensor, k, file
   width, height, channel = tensor.dims
   width ||= 1
   height ||= 1
   channel ||= 1
   offset = width * height * channel * k
+  range = offset ... (width * height * channel + offset)
+
+  normalizer =
+    if $options['normalize']
+      -> (xs) {
+        min, max = xs.minmax
+        xs.map { |f| ((f - min) / (max - min) * 255).to_i }
+      }
+    else
+      -> (xs) { xs.map { |f| (f * 255).to_i } }
+    end
 
   depth, org_data =
     case tensor.data_type
     when :UINT8
-      [8, tensor.byte_data.unpack('C*').drop(8)]
+      [8, tensor.byte_data.unpack('C*').drop(8)[range]]
     when :INT8
-      [8, tensor.byte_data.unpack('C*').drop(8)]
+      [8, tensor.byte_data.unpack('C*').drop(8)[range]]
     when :FLOAT
-      [8, tensor.float_data.map {|f| (f * 255).to_i}]
+      [8, normalizer.call(tensor.float_data[range])]
     when :DOUBLE
-      [8, tensor.double_data.map {|f| (f * 255).to_i}]
+      [8, normalizer.call(tensor.double_data[range])]
     else
       raise "unsupported data type: #{tensor.data_type}"
     end
@@ -110,7 +122,7 @@ def write_image tensor, k, file
   raw_data = (0...height).map do |y|
     (0...width).map do |x|
       (0...channel).map do |ch|
-        org_data[ch * height * width + y * width + x + offset]
+        org_data[ch * height * width + y * width + x]
       end
     end
   end
