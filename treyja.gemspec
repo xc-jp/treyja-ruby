@@ -1,7 +1,7 @@
 
 Gem::Specification.new do |s|
   s.name        = 'treyja'
-  s.version     = '0.0.1'
+  s.version     = '0.1.0'
   s.date        = '2018-11-18'
   s.summary     = "Output tensors in json"
   s.description = "A simple program to output tensors in json"
