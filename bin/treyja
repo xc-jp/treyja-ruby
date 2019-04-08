@@ -94,9 +94,9 @@ def write_image tensor, k, file
   depth, org_data =
     case tensor.data_type
     when :UINT8
-      [8, tensor.byte_data.unpack('C*').drop(8)[range]]
+      [8, tensor.byte_data.unpack('C*')[range]]
     when :INT8
-      [8, tensor.byte_data.unpack('C*').drop(8)[range]]
+      [8, tensor.byte_data.unpack('C*')[range]]
     when :FLOAT
       [8, normalizer.call(tensor.float_data[range])]
     when :DOUBLE
@@ -159,7 +159,7 @@ end
 def raw_data tensor
   case tensor.data_type
   when :INT8, :UINT8
-    tensor.byte_data.unpack('C*').drop(8)
+    tensor.byte_data.unpack('C*')
   when :FLOAT
     tensor.float_data
   when :DOUBLE
