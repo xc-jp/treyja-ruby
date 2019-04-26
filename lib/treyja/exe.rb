@@ -1,153 +1,168 @@
 require 'tensors_pb.rb'
 
-$unabbrev = {
-  'h' => 'help',
-  'help' => 'help',
-  'output' => 'output',
-  'normalize' => 'normalize',
-  'round' => 'round'
-}
-
-$options = [
-  *ARGV.map { |k| (ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], true] : nil },
-  *ARGV.each_cons(2).map { |k, v| (v !~ /^-/ && ms = k.match(/^--?(\w+)/)) ? [$unabbrev[ms[1]], v] : nil }
-  ].compact.to_h
-
-$command, $file = ARGV.take_while { |s| s !~ /^-/ }
-
-$round = $options.fetch('round', 4).to_f
-if $round > 0
-  class Float
-    def to_s_with_round
-      self.round($round).to_s_without_round
-    end
-    alias_method :to_s_without_round, :to_s
-    alias_method :to_s, :to_s_with_round
+class Float
+  def self.round_digits
+    @round_digits
   end
 
-  class Double
-    def to_s_with_round
-      self.round($round).to_s_without_round
-    end
-    alias_method :to_s_without_round, :to_s
-    alias_method :to_s, :to_s_with_round
-  end
-end
-
-def reader
-  io = $file ? open($file) : STDIN
-  io.binmode
-
-  Enumerator.new do |y|
-    while magic = io.read(4)
-      raise "Incorrect magic bytes" unless magic == 'XCIX'
-      length = io.read(8).reverse.unpack("Q").first.to_i
-      y << Tensors::TensorsProto.decode(io.read(length))
-    end
-  end
-end
-
-
-def write_image tensor, k, file
-  width, height, channel = tensor.dims
-  width ||= 1
-  height ||= 1
-  channel ||= 1
-  offset = width * height * channel * k
-  range = offset ... (width * height * channel + offset)
-
-  normalizer =
-    if $options['normalize']
-      -> (xs) {
-        min, max = xs.minmax
-        xs.map { |f| ((f - min) / (max - min) * 255).to_i }
-      }
-    else
-      -> (xs) { xs.map { |f| (f * 255).to_i } }
-    end
-
-  depth, org_data =
-    case tensor.data_type
-    when :UINT8
-      [8, tensor.byte_data.unpack('C*')[range]]
-    when :INT8
-      [8, tensor.byte_data.unpack('C*')[range]]
-    when :FLOAT
-      [8, normalizer.call(tensor.float_data[range])]
-    when :DOUBLE
-      [8, normalizer.call(tensor.double_data[range])]
-    else
-      raise "unsupported data type: #{tensor.data_type}"
-    end
-
-  color_type =
-    case channel
-    when 1
-      0                         # grayscale
-    when 2
-      4                         # grayscale and alpha
-    when 3
-      2                         # rgb
-    when 4
-      6                         # rgba
-    else
-      raise "unsupported channel: #{channel}"
-    end
-
-  raw_data = (0...height).map do |y|
-    (0...width).map do |x|
-      (0...channel).map do |ch|
-        org_data[ch * height * width + y * width + x]
-      end
-    end
+  def to_s_with_round
+    Float.round_digits ?
+      self.round(Float.round_digits).to_s_without_round :
+      self.to_s_without_round
   end
 
-  def chunk(type, data)
-    [data.bytesize, type, data, Zlib.crc32(type + data)].pack("NA4A*N")
-  end
-
-  open(file, 'w') do |io|
-    io.print "\x89PNG\r\n\x1a\n"
-    io.print chunk("IHDR", [width, height, depth, color_type, 0, 0, 0].pack("NNCCCCC"))
-    img_data = raw_data.map {|line| ([0] + line.flatten).pack("C*") }.join
-    io.print chunk("IDAT", Zlib::Deflate.deflate(img_data))
-    io.print chunk("IEND", "")
-  end
-end
-
-def dims_to_indices dims
-  if dims.empty?
-    [[]]
-  else
-    x = dims.first
-    xs = dims[1..-1]
-    Enumerator.new do |y|
-      dims_to_indices(xs).each do |is|
-        x.times.each do |i|
-          y << [i, *is]
-        end
-      end
-    end
-  end
-end
-
-def raw_data tensor
-  case tensor.data_type
-  when :INT8, :UINT8
-    tensor.byte_data.unpack('C*')
-  when :FLOAT
-    tensor.float_data
-  when :DOUBLE
-    tensor.double_data
-  else
-    raise "unsupported data type: #{tensor.data_type}"
-  end
+  alias_method :to_s_without_round, :to_s
+  alias_method :to_s, :to_s_with_round
 end
 
 module Treyja
-  module Exe
-    def self.run
-      if $command.nil? || $options["help"]
+  class Exe
+    def initialize args
+      @args = args
+    end
+
+    def options
+      unabbrev = {
+        'h' => 'help',
+        'help' => 'help',
+        'output' => 'output',
+        'normalize' => 'normalize',
+        'round' => 'round'
+      }
+
+      @options ||= [
+        *@args.map { |k| (ms = k.match(/^--?(\w+)/)) ? [unabbrev[ms[1]], true] : nil },
+        *@args.each_cons(2).map { |k, v| (v !~ /^-/ && ms = k.match(/^--?(\w+)/)) ? [unabbrev[ms[1]], v] : nil }
+      ].compact.to_h
+    end
+
+    def command
+      @commmand ||= @args.take_while { |s| s !~ /^-/ }.first
+    end
+
+    def file
+      @file ||= @args.take_while { |s| s !~ /^-/ }.drop(1).first
+    end
+
+    def patch_round
+      @round ||= options.fetch('round', 4).to_f
+      if @round > 0
+        ::Float.instance_variable_set "@round_digits", @round
+      end
+    end
+
+    def reader
+      io = file ? open(file) : STDIN
+      io.binmode
+
+      Enumerator.new do |y|
+        while magic = io.read(4)
+          raise "Incorrect magic bytes" unless magic == 'XCIX'
+          length = io.read(8).reverse.unpack("Q").first.to_i
+          y << Tensors::TensorsProto.decode(io.read(length))
+        end
+      end
+    end
+
+
+    def write_image tensor, k, file
+      width, height, channel = tensor.dims
+      width ||= 1
+      height ||= 1
+      channel ||= 1
+      offset = width * height * channel * k
+      range = offset ... (width * height * channel + offset)
+
+      normalizer =
+        if options['normalize']
+          -> (xs) {
+            min, max = xs.minmax
+            xs.map { |f| ((f - min) / (max - min) * 255).to_i }
+          }
+        else
+          -> (xs) { xs.map { |f| (f * 255).to_i } }
+        end
+
+      depth, org_data =
+             case tensor.data_type
+             when :UINT8
+               [8, tensor.byte_data.unpack('C*')[range]]
+             when :INT8
+               [8, tensor.byte_data.unpack('C*')[range]]
+             when :FLOAT
+               [8, normalizer.call(tensor.float_data[range])]
+             when :DOUBLE
+               [8, normalizer.call(tensor.double_data[range])]
+             else
+               raise "unsupported data type: #{tensor.data_type}"
+             end
+
+      color_type =
+        case channel
+        when 1
+          0                         # grayscale
+        when 2
+          4                         # grayscale and alpha
+        when 3
+          2                         # rgb
+        when 4
+          6                         # rgba
+        else
+          raise "unsupported channel: #{channel}"
+        end
+
+      raw_data = (0...height).map do |y|
+        (0...width).map do |x|
+          (0...channel).map do |ch|
+            org_data[ch * height * width + y * width + x]
+          end
+        end
+      end
+
+      def chunk(type, data)
+        [data.bytesize, type, data, Zlib.crc32(type + data)].pack("NA4A*N")
+      end
+
+      open(file, 'w') do |io|
+        io.print "\x89PNG\r\n\x1a\n"
+        io.print chunk("IHDR", [width, height, depth, color_type, 0, 0, 0].pack("NNCCCCC"))
+        img_data = raw_data.map {|line| ([0] + line.flatten).pack("C*") }.join
+        io.print chunk("IDAT", Zlib::Deflate.deflate(img_data))
+        io.print chunk("IEND", "")
+      end
+    end
+
+    def dims_to_indices dims
+      if dims.empty?
+        [[]]
+      else
+        x = dims.first
+        xs = dims[1..-1]
+        Enumerator.new do |y|
+          dims_to_indices(xs).each do |is|
+            x.times.each do |i|
+              y << [i, *is]
+            end
+          end
+        end
+      end
+    end
+
+    def raw_data tensor
+      case tensor.data_type
+      when :INT8, :UINT8
+        tensor.byte_data.unpack('C*')
+      when :FLOAT
+        tensor.float_data
+      when :DOUBLE
+        tensor.double_data
+      else
+        raise "unsupported data type: #{tensor.data_type}"
+      end
+    end
+
+    def run
+      if command.nil? || options["help"]
         puts <<EOS
 Usage: treyja COMMAND [FILE] [OPTIONS]
 
@@ -168,7 +183,8 @@ EOS
         return
       end
 
-      case $command
+      patch_round
+      case command
       when "dump"
         reader.each do |ts|
           p ts
@@ -180,7 +196,7 @@ EOS
           STDOUT.flush
         end
       when "image"
-        dir = $options["output"]
+        dir = options["output"]
         raise "--output option required" unless dir
 
         FileUtils.mkdir_p dir
