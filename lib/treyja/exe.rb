@@ -29,42 +29,31 @@ module Treyja
     end
 
     def options
-      unabbrev = {
-        'h' => 'help',
-        'help' => 'help',
-        'output' => 'output',
-        'normalize' => 'normalize',
-        'round' => 'round'
-      }
-
-      @options ||= [
-        *@args.map { |k| (ms = k.match(/^--?(\w+)/)) ? [unabbrev[ms[1]], true] : nil },
-        *@args.each_cons(2).map { |k, v| (v !~ /^-/ && ms = k.match(/^--?(\w+)/)) ? [unabbrev[ms[1]], v] : nil }
-      ].compact.to_h
+      @options ||= {}
     end
 
-    def command
-      @commmand ||= @args.take_while { |s| s !~ /^-/ }.first
-    end
-
-    def file
-      @file ||= @args.take_while { |s| s !~ /^-/ }.drop(1).first
-    end
-
-    def patch_round
-      @round ||= options.fetch('round', 4).to_f
-      if @round > 0
-        ::Float.instance_variable_set "@round_digits", @round
+    def patch_round round
+      if round > 0
+        ::Float.instance_variable_set "@round_digits", round
       end
     end
 
     def run
-      if options["help"]
+      opts = OptionParser.new
+      opts.on("--output DIR")
+      opts.on("--normalize")
+      opts.on("--round INT")
+      opts.on("--version") do
+        puts "Version: #{Treyja::VERSION}"
+        return
+      end
+      opts.on("-h", "--help") do
         Treyja::Command::Help.new.run
         return
       end
+      command, file = opts.parse!(@args, into: options)
 
-      patch_round
+      patch_round options.fetch(:round, 4).to_f
       case command
       when "dump"
         reader = Treyja::Reader.new file
@@ -73,11 +62,11 @@ module Treyja
         reader = Treyja::Reader.new file
         Treyja::Command::Json.new(reader).run
       when "image"
-        output_dir = options["output"]
+        output_dir = options[:output]
         raise "--output option required" unless output_dir
 
         reader = Treyja::Reader.new file
-        Treyja::Command::Image.new(reader, output_dir, options.slice("normalize")).run
+        Treyja::Command::Image.new(reader, output_dir, options.slice(:normalize)).run
       when "csv"
         reader = Treyja::Reader.new file
         Treyja::Command::Csv.new(reader).run
