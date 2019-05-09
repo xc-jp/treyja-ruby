@@ -1,4 +1,6 @@
 require "bundler/setup"
+require "pry"
+
 require "treyja"
 
 RSpec.configure do |config|
