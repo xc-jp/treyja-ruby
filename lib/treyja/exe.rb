@@ -1,4 +1,6 @@
-require 'tensors_pb.rb'
+require "optparse"
+
+require "treyja/reader"
 
 class Float
   def self.round_digits
@@ -50,20 +52,6 @@ module Treyja
         ::Float.instance_variable_set "@round_digits", @round
       end
     end
-
-    def reader
-      io = file ? open(file) : STDIN
-      io.binmode
-
-      Enumerator.new do |y|
-        while magic = io.read(4)
-          raise "Incorrect magic bytes" unless magic == 'XCIX'
-          length = io.read(8).reverse.unpack("Q").first.to_i
-          y << Tensors::TensorsProto.decode(io.read(length))
-        end
-      end
-    end
-
 
     def write_image tensor, k, file
       width, height, channel = tensor.dims
@@ -186,11 +174,13 @@ EOS
       patch_round
       case command
       when "dump"
+        reader = Treyja::Reader.new file
         reader.each do |ts|
           p ts
           STDOUT.flush
         end
       when "json"
+        reader = Treyja::Reader.new file
         reader.each do |ts|
           puts ts.to_json
           STDOUT.flush
@@ -202,6 +192,7 @@ EOS
         FileUtils.mkdir_p dir
 
         require "zlib"
+        reader = Treyja::Reader.new file
         reader.each_with_index do |tensors, i|
           tensors.tensors.each_with_index do |tensor, j|
             n = tensor.dims.drop(3).inject(1, :*) # Drop width, height and channel and fold the rest
@@ -213,6 +204,7 @@ EOS
           end
         end
       when "csv"
+        reader = Treyja::Reader.new file
         if head = reader.first
           headers = head.tensors.each_with_index.flat_map do |t, i|
             dims_to_indices(t.dims).map do |ix|

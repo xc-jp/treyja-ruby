@@ -3,7 +3,7 @@
 
 require 'google/protobuf'
 
-require 'tensor_pb'
+require 'treyja/proto/tensor_pb'
 Google::Protobuf::DescriptorPool.generated_pool.build do
   add_message "tensors.TensorsProto" do
     repeated :tensors, :message, 1, "tensor.TensorProto"
