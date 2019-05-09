@@ -12,3 +12,7 @@ RSpec.configure do |config|
     c.syntax = :expect
   end
 end
+
+def fixture_path
+  Pathname.new "spec/fixtures"
+end
