@@ -26,7 +26,7 @@ RSpec.describe Treyja::Exe do
     it "shows version" do
       expect {
         Treyja::Exe.new(["--version"]).run
-      }.to output("Version: 0.1.3\n").to_stdout
+      }.to output("Version: #{Treyja::VERSION}\n").to_stdout
     end
   end
 

@@ -1,11 +1,12 @@
 require "optparse"
 
-require "treyja/reader"
 require "treyja/command/csv"
 require "treyja/command/dump"
 require "treyja/command/help"
 require "treyja/command/image"
 require "treyja/command/json"
+require "treyja/reader"
+require "treyja/version"
 
 class Float
   def self.round_digits
