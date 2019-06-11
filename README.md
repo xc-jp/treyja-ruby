@@ -25,7 +25,7 @@ Assume that we are in the root dir of `alderaan`.
 ### To show in JSON format
 
 ```console
-$ draupnir get draupnir/test/fixtures/configuration/literal.yaml | treyja json
+$ draupnir stream draupnir/test/fixtures/configuration/literal.yaml | treyja json
 {"tensors":[{"dims":[3,2],"dataType":"FLOAT","int32Data":[],"int64Data":[],"uint32Data":[],"uint64Data":[],"floatData":[0.2,0.30000001,1,2,3,5],"doubleData":[]}]}
 {"tensors":[{"dims":[3,2],"dataType":"FLOAT","int32Data":[],"int64Data":[],"uint32Data":[],"uint64Data":[],"floatData":[0,0,0.5,0.60000002,0.69999999,0.80000001],"doubleData":[]}]}
 ```
