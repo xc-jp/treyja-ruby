@@ -25,7 +25,7 @@ Assume that we are in the root dir of `alderaan`.
 ### To show in JSON format
 
 ```console
-$ draupnir get draupnir/test/fixtures/configuration/literal.yaml | treyja json
+$ draupnir stream draupnir/test/fixtures/configuration/literal.yaml | treyja json
 {"tensors":[{"dims":[3,2],"dataType":"FLOAT","int32Data":[],"int64Data":[],"uint32Data":[],"uint64Data":[],"floatData":[0.2,0.30000001,1,2,3,5],"doubleData":[]}]}
 {"tensors":[{"dims":[3,2],"dataType":"FLOAT","int32Data":[],"int64Data":[],"uint32Data":[],"uint64Data":[],"floatData":[0,0,0.5,0.60000002,0.69999999,0.80000001],"doubleData":[]}]}
 ```
@@ -35,7 +35,7 @@ $ draupnir get draupnir/test/fixtures/configuration/literal.yaml | treyja json
 [jq](https://stedolan.github.io/jq/) command is handy to pretty print JSON.
 
 ```console
-$ draupnir get draupnir/test/fixtures/configuration/literal.yaml | treyja json | jq
+$ draupnir stream draupnir/test/fixtures/configuration/literal.yaml | treyja json | jq
 {
   "tensors": [
     {
@@ -96,7 +96,7 @@ Shape of input tensors must be 3 dimensional and channel count must be 1 (graysc
 Element type of input tensors must be uint8, int8, float or double.
 
 ```console
-$ draupnir get mnist --take 100 | treyja image --output tmp/mnist-images
+$ draupnir stream mnist --take 100 | treyja image --output tmp/mnist-images
 ```
 
 ![mnist-0](https://user-images.githubusercontent.com/1730718/48336250-3b13a100-e6a3-11e8-9f39-558ab792ac01.png)
